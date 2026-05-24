@@ -1,7 +1,7 @@
 import logging
 import random
-from datetime import time
 import os
+from datetime import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -30,120 +30,85 @@ PHRASES = [
     ("Я из Узбекистана","Men O'zbekistondan","Ya iz Uzbekistana"),
 ]
 
-user_scores = {}
+scores = {}
 
-def get_score(uid):
-    return user_scores.get(uid, {"score":0,"streak":0,"total":0})
-
-def update_score(uid, correct):
-    s = get_score(uid)
-    if correct: s["score"]+=10; s["streak"]+=1
+def get_s(uid): return scores.get(uid,{"score":0,"streak":0,"total":0})
+def upd_s(uid,ok):
+    s=get_s(uid)
+    if ok: s["score"]+=10;s["streak"]+=1
     else: s["streak"]=0
-    s["total"]+=1
-    user_scores[uid]=s
-    return s
+    s["total"]+=1;scores[uid]=s;return s
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    kb = [
-        [InlineKeyboardButton("📚 So'z o'rgan", callback_data="word")],
-        [InlineKeyboardButton("💬 Iboralar", callback_data="phrases")],
-        [InlineKeyboardButton("🧠 Test", callback_data="quiz")],
-        [InlineKeyboardButton("📊 Statistika", callback_data="stats")],
-    ]
+def menu_kb():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📚 So'z o'rgan",callback_data="word")],
+        [InlineKeyboardButton("💬 Iboralar",callback_data="phrases")],
+        [InlineKeyboardButton("🧠 Test",callback_data="quiz")],
+        [InlineKeyboardButton("📊 Statistika",callback_data="stats")],
+    ])
+
+async def start(update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+    cid=update.effective_chat.id
+    for j in ctx.job_queue.get_jobs_by_name(str(cid)): j.schedule_removal()
+    ctx.job_queue.run_daily(morning_cb,time=time(3,0),chat_id=cid,name=str(cid),data=cid)
+    ctx.job_queue.run_daily(evening_cb,time=time(15,0),chat_id=cid,name=str(cid)+"e",data=cid)
     await update.message.reply_text(
-        f"Salom {update.effective_user.first_name}! 🇷🇺\n\n"
-        "Har kuni 8:00 va 20:00 da dars eslatmasi keladi!\n\nBo'limni tanlang:",
-        reply_markup=InlineKeyboardMarkup(kb)
-    )
-    jq = context.job_queue
-    cid = update.effective_chat.id
-    for j in jq.get_jobs_by_name(str(cid)): j.schedule_removal()
-    jq.run_daily(morning_cb, time=time(3,0), chat_id=cid, name=str(cid), data=cid)
-    jq.run_daily(evening_cb, time=time(15,0), chat_id=cid, name=str(cid)+"e", data=cid)
+        f"Salom {update.effective_user.first_name}! 🇷🇺\n\nHar kuni 8:00 va 20:00 da dars eslatmasi keladi!\n\nBo'limni tanlang:",
+        reply_markup=menu_kb())
 
-async def morning_cb(context: ContextTypes.DEFAULT_TYPE):
-    w = random.choice(WORDS)
-    await context.bot.send_message(context.job.data,
-        f"☀️ Xayrli tong! Bugungi so'z:\n\n🇷🇺 *{w[0]}*\n🇺🇿 {w[1]}\n🔤 [{w[2]}]\n\n5 marta yozing! ✍️",
-        parse_mode="Markdown")
+async def morning_cb(ctx:ContextTypes.DEFAULT_TYPE):
+    w=random.choice(WORDS)
+    await ctx.bot.send_message(ctx.job.data,
+        f"☀️ Xayrli tong! Bugungi so'z:\n\n🇷🇺 *{w[0]}*\n🇺🇿 {w[1]}\n🔤 [{w[2]}]\n\n5 marta yozing! ✍️",parse_mode="Markdown")
 
-async def evening_cb(context: ContextTypes.DEFAULT_TYPE):
-    p = random.choice(PHRASES)
-    await context.bot.send_message(context.job.data,
-        f"🌙 Kechqurun darsi:\n\n💬 *{p[0]}*\n🇺🇿 {p[1]}\n🔤 [{p[2]}]\n\nBu iborani ishlatib ko'ring! 😊",
-        parse_mode="Markdown")
+async def evening_cb(ctx:ContextTypes.DEFAULT_TYPE):
+    p=random.choice(PHRASES)
+    await ctx.bot.send_message(ctx.job.data,
+        f"🌙 Kechqurun darsi:\n\n💬 *{p[0]}*\n🇺🇿 {p[1]}\n🔤 [{p[2]}]\n\nIshlatib ko'ring! 😊",parse_mode="Markdown")
 
-async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query; await q.answer()
-    d = q.data
-
-    if d == "menu":
-        kb = [[InlineKeyboardButton("📚 So'z o'rgan",callback_data="word")],
-              [InlineKeyboardButton("💬 Iboralar",callback_data="phrases")],
-              [InlineKeyboardButton("🧠 Test",callback_data="quiz")],
-              [InlineKeyboardButton("📊 Statistika",callback_data="stats")]]
-        await q.edit_message_text("Bo'limni tanlang:", reply_markup=InlineKeyboardMarkup(kb))
-
-    elif d == "word":
-        w = random.choice(WORDS); context.user_data["w"]=w
-        kb = [[InlineKeyboardButton("👁 Tarjimani ko'r",callback_data="show")],
-              [InlineKeyboardButton("🧠 Test",callback_data="quiz"),InlineKeyboardButton("🏠 Menu",callback_data="menu")]]
+async def btn(update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+    q=update.callback_query;await q.answer();d=q.data
+    if d=="menu":
+        await q.edit_message_text("Bo'limni tanlang:",reply_markup=menu_kb())
+    elif d=="word":
+        w=random.choice(WORDS);ctx.user_data["w"]=w
         await q.edit_message_text(f"📚 So'z:\n\n🇷🇺 *{w[0]}*\n🔤 [{w[2]}]\n\nTarjimasini bilesizmi?",
-            reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-
-    elif d == "show":
-        w = context.user_data.get("w", random.choice(WORDS))
-        kb = [[InlineKeyboardButton("➡️ Keyingi",callback_data="word")],
-              [InlineKeyboardButton("🏠 Menu",callback_data="menu")]]
-        await q.edit_message_text(f"📚 So'z:\n\n🇷🇺 *{w[0]}*\n🇺🇿 ✅ {w[1]}\n🔤 [{w[2]}]",
-            reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-
-    elif d == "phrases":
-        sel = random.sample(PHRASES, 3)
-        txt = "💬 *Iboralar:*\n\n"
-        for p in sel: txt += f"🇷🇺 {p[0]}\n🇺🇿 {p[1]}\n🔤 [{p[2]}]\n\n"
-        kb = [[InlineKeyboardButton("🔄 Boshqalari",callback_data="phrases"),
-               InlineKeyboardButton("🏠 Menu",callback_data="menu")]]
-        await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-
-    elif d == "quiz":
-        correct = random.choice(WORDS)
-        wrong = random.sample([w for w in WORDS if w[0]!=correct[0]], 3)
-        opts = wrong+[correct]; random.shuffle(opts)
-        context.user_data["qw"] = correct
-        kb = [[InlineKeyboardButton(o[1], callback_data=f"a_{o[0]}_{correct[0]}")] for o in opts]
-        await q.edit_message_text(f"🧠 *Test:*\n\n🇷🇺 *{correct[0]}* — qaysi tarjima?",
-            reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-
-    elif d.startswith("a_"):
-        parts = d.split("_",2); chosen=parts[1]; correct=parts[2]
-        ok = chosen==correct
-        s = update_score(update.effective_user.id, ok)
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("👁 Ko'r",callback_data="show")]
+                ,[InlineKeyboardButton("🧠 Test",callback_data="quiz"),InlineKeyboardButton("🏠 Menu",callback_data="menu")]]),parse_mode="Markdown")
+    elif d=="show":
+        w=ctx.user_data.get("w",random.choice(WORDS))
+        await q.edit_message_text(f"📚\n\n🇷🇺 *{w[0]}*\n🇺🇿 ✅ {w[1]}\n🔤 [{w[2]}]",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➡️ Keyingi",callback_data="word")],[InlineKeyboardButton("🏠 Menu",callback_data="menu")]]),parse_mode="Markdown")
+    elif d=="phrases":
+        sel=random.sample(PHRASES,3);txt="💬 *Iboralar:*\n\n"
+        for p in sel: txt+=f"🇷🇺 {p[0]}\n🇺🇿 {p[1]}\n🔤 [{p[2]}]\n\n"
+        await q.edit_message_text(txt,reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Boshqalari",callback_data="phrases"),InlineKeyboardButton("🏠 Menu",callback_data="menu")]]),parse_mode="Markdown")
+    elif d=="quiz":
+        c=random.choice(WORDS);wrong=random.sample([w for w in WORDS if w[0]!=c[0]],3)
+        opts=wrong+[c];random.shuffle(opts);ctx.user_data["qw"]=c
+        await q.edit_message_text(f"🧠 *Test:*\n\n🇷🇺 *{c[0]}* — qaysi tarjima?",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(o[1],callback_data=f"a|{o[0]}|{c[0]}")] for o in opts]),parse_mode="Markdown")
+    elif d.startswith("a|"):
+        _,chosen,correct=d.split("|");ok=chosen==correct
+        s=upd_s(update.effective_user.id,ok)
         if ok: msg=f"✅ *To'g'ri!* +10 ball 🎉\n🔥 Ketma-ket: {s['streak']}"
         else:
-            ctr = next((w[1] for w in WORDS if w[0]==correct),"?")
+            ctr=next((w[1] for w in WORDS if w[0]==correct),"?")
             msg=f"❌ *Xato!*\nTo'g'ri: {ctr}"
-        kb = [[InlineKeyboardButton("🔄 Yana",callback_data="quiz"),
-               InlineKeyboardButton("🏠 Menu",callback_data="menu")]]
         await q.edit_message_text(msg+f"\n\n⭐ Ball: {s['score']} | Savollar: {s['total']}",
-            reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-
-    elif d == "stats":
-        s = get_score(update.effective_user.id)
-        acc = round(s["score"]/10/s["total"]*100) if s["total"]>0 else 0
-        kb = [[InlineKeyboardButton("🏠 Menu",callback_data="menu")]]
-        await q.edit_message_text(
-            f"📊 *Statistika:*\n\n⭐ Ball: {s['score']}\n🔥 Ketma-ket: {s['streak']}\n"
-            f"📝 Savollar: {s['total']}\n✅ To'g'rilik: {acc}%\n\nZo'r ketayapsiz! 💪",
-            reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Yana",callback_data="quiz"),InlineKeyboardButton("🏠 Menu",callback_data="menu")]]),parse_mode="Markdown")
+    elif d=="stats":
+        s=get_s(update.effective_user.id)
+        acc=round(s["score"]/10/s["total"]*100) if s["total"]>0 else 0
+        await q.edit_message_text(f"📊 *Statistika:*\n\n⭐ Ball: {s['score']}\n🔥 Ketma-ket: {s['streak']}\n📝 Savollar: {s['total']}\n✅ To'g'rilik: {acc}%\n\nZo'r ketayapsiz! 💪",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menu",callback_data="menu")]]),parse_mode="Markdown")
 
 def main():
-    token = os.getenv("BOT_TOKEN")
-    app = Application.builder().token(token).build()
-    app.add_handler(CommandHandler("start", start))
+    app=Application.builder().token(os.environ["BOT_TOKEN"]).build()
+    app.add_handler(CommandHandler("start",start))
     app.add_handler(CallbackQueryHandler(btn))
     print("Bot ishga tushdi! ✅")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
